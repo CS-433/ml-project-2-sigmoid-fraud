@@ -15,13 +15,16 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset, SubsetRandomSampler, random_split
+from torch.nn.functional import one_hot
+from torch import Tensor
+from typing import Union
 
-from scripts.evaluation import metrics
+from scripts.evaluation import metrics, DiceLoss, FocalLoss, metrics_torch, BinaryFocalLoss, FraudLoss
 from scripts.models import VGG13, UNET
 
 from scripts.preprocessing import *
 
-def train_model(X, y, config):
+def train_model(X, y, config, use_model=None):
 
     #road seg dataset
     #X, y = road.x, road.y
@@ -41,15 +44,25 @@ def train_model(X, y, config):
     device = config['device']
     model_dict = {"VGG16": VGG13, "U-Net": UNET}
     optimizer_dict = {"AdamW": optim.AdamW}
-    loss_function_dict = {"CrossEntropy": nn.CrossEntropyLoss, "BCELoss": nn.BCELoss}
+
+    loss_function_dict = {"CrossEntropy": nn.CrossEntropyLoss, "BCELoss": nn.BCELoss, "Dice": DiceLoss,
+     "Focal": FocalLoss, "binaryFocal": BinaryFocalLoss, "FraudLoss": FraudLoss}
+
     scheduler_dict  = {'CosineAnnealing': torch.optim.lr_scheduler.CosineAnnealingLR}
     scheduler_kwargs_dict = {'CosineAnnealing': dict(T_max = n_epochs*len(train_loader.dataset))}
 
-    prediction_transform_dict = {"PatchPred": PatchPred, "identity": identity_func, "identity_detach": identity_detach}
+    prediction_transform_dict = {"PatchPred": PatchPred, "identity": identity_func, "identity_detach": identity_detach,
+     "numpy_and_binarize": numpy_and_binarize, "binarize": binarize}
     labels_transform_dict = {"unet_reshape": permutate_labels, "identity": identity_func}
-
-    model = model_dict[config['model']]().to(device=device) #Get model
-    optimizer = optimizer_dict[config['optimizer']](model.parameters(), lr = config['learning_rate']) #Get optimizer
+    
+    if (use_model is not None):
+      model = use_model
+    else: 
+      model = model_dict[config['model']]().to(device=device) #Get model
+    
+    optimizer = optimizer_dict[config['optimizer']](model.parameters(),lr = config['learning_rate']) #Get optimizer
+    if ("weight_decay" in list(config.keys())): 
+      optimizer = optimizer_dict[config['optimizer']](model.parameters(),lr = config['learning_rate'], weight_decay=config['weight_decay']) #Get optimizer
     criterion = loss_function_dict[config['loss_function']]() #Get loss function
 
     scheduler = scheduler_dict[config['scheduler']](optimizer, **scheduler_kwargs_dict[config['scheduler']])
@@ -59,7 +72,7 @@ def train_model(X, y, config):
 
 
     print("X_train shape:", X_train.shape, y_train.shape)
-
+    metrics_dict = {"training": [], "validation": []}
     for epoch in range(n_epochs):
 
         #Model training
@@ -82,8 +95,9 @@ def train_model(X, y, config):
             scheduler.step()
 
             prediction_class = prediction_transform(prediction)
-            labels = np.array(labels.detach().cpu().numpy())
-            batch_metrics = metrics(prediction_class.flatten(), labels.flatten())
+            #labels = np.array(labels.detach().cpu().numpy())
+            #batch_metrics = metrics(prediction_class.flatten(), labels.flatten())
+            batch_metrics = metrics_torch(prediction_class, labels)
             train_metrics['Accuracy'] += batch_metrics['Accuracy']
             train_metrics['F1-score'] += batch_metrics['F1-score']
 
@@ -91,7 +105,7 @@ def train_model(X, y, config):
         train_metrics['F1-score'] /= len(train_loader)
         average_train_loss = total_train_loss/len(train_loader)
 
-        if (epoch + 1) % 5 == 0:
+        if (epoch + 1) % config['validate_every'] == 0:
             model.eval()
             validation_metrics = {'Accuracy': 0, 'F1-score': 0}
             total_validation_loss = 0
@@ -110,8 +124,9 @@ def train_model(X, y, config):
                       total_validation_loss += validation_loss.item()
 
                       prediction_class = prediction_transform(prediction)
-                      validation_labels = np.array(validation_labels.detach().cpu().numpy())
-                      batch_metrics = metrics(prediction_class.flatten(), validation_labels.flatten())
+                      #validation_labels = np.array(validation_labels.detach().cpu().numpy())
+                      #batch_metrics = metrics(prediction_class.flatten(), validation_labels.flatten())
+                      batch_metrics = metrics_torch(prediction_class, validation_labels)
                       validation_metrics['Accuracy'] += batch_metrics['Accuracy']
                       validation_metrics['F1-score'] += batch_metrics['F1-score']
 
@@ -119,8 +134,11 @@ def train_model(X, y, config):
               validation_metrics['F1-score'] /= len(validation_loader)
               average_validation_loss = total_validation_loss/len(validation_loader)
 
+              metrics_dict["training"].append(train_metrics)
+              metrics_dict["validation"].append(validation_metrics)
+              
             print('Epoch:', '%03d' % (epoch + 1), 'train loss =', '{:.6f}'.format(average_train_loss),
                    'val loss =', '{:.6f}'.format(average_validation_loss),'train accuracy =','{:.4f}'.format(train_metrics['Accuracy']),
                      'val accuracy =','{:.4f}'.format(validation_metrics['Accuracy']), 'validation F1', '{:.4f}'.format(validation_metrics['F1-score']))
 
-    return model
+    return model, metrics_dict

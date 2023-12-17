@@ -10,6 +10,45 @@ import numpy as np
 
 from scripts.preprocessing import *
 
+import torch
+from torch.nn.functional import one_hot
+from torch import Tensor
+from typing import Union
+import torch.nn as nn
+
+
+def metrics_torch(y_pred, y, significant_digits = 5):
+    """"
+    Function evaluates models for binary classification tasks
+    Inputs are 2 1D torch.tensors
+    y_pred is your predicted numpy array values are {0, 1}
+    y is the actual labels/ground truth values, also in {0, 1}
+    """
+    y_pred, y = torch.flatten(y_pred), torch.flatten(y)
+    TP = torch.sum(y_pred*y)
+    TN = torch.sum(y_pred + y == 0)
+    FP = torch.sum(y_pred) - TP
+    FN = torch.sum(y) - TP
+
+    if (TP+FP != 0):
+        P = TP/(TP+FP)
+    else:
+        P = 0
+
+    if (TP+FN != 0):
+        R = TP/(TP+FN)
+    else:
+        R = 0
+
+    if (P+R != 0):
+        F1 = 2*(P*R)/(P+R)
+    else:
+        F1 = 0
+    metric_formulas = {"Accuracy": (TP + TN)/(TP + TN + FP + FN), "Precision": P,
+                        "Recall": R, "F1-score":F1}
+    return metric_formulas
+
+  
 def metrics(y_pred, y, significant_digits = 5):
     """"
     Function evaluates models for binary classification tasks
@@ -18,7 +57,7 @@ def metrics(y_pred, y, significant_digits = 5):
     y is the actual labels/ground truth values, also in {0, 1}
     """
     TP, TN, FP, FN = (0 for i in range(4))
-    TP = sum(y_pred + y > 1)
+    TP = np.sum(y_pred + y == 2)
     TN = sum(y_pred + y == 0)
     FP = sum(y_pred) - TP
     FN = sum(y) - TP
@@ -37,8 +76,8 @@ def metrics(y_pred, y, significant_digits = 5):
         F1 = 2*(P*R)/(P+R)
     else:
         F1 = 0
-    metric_formulas = {"Accuracy": round((TP + TN)/(TP + TN + FP + FN), significant_digits), "Precision": round(P, significant_digits),
-                        "Recall": round(R, significant_digits), "F1-score":round(F1, significant_digits)}
+    metric_formulas = {"Accuracy": (TP + TN)/(TP + TN + FP + FN), "Precision": P,
+                        "Recall": R, "F1-score":F1}
     return metric_formulas
 
 def visualize_predicition(img, gt, scaler, model, n_patches):
@@ -200,3 +239,158 @@ def visualize_predicition_unet(img, gt, model):
     #Get image metrics
 
     return metrics(img_mask.T.flatten(), gt.flatten())
+
+
+class DiceLoss(nn.Module):
+  def __init__(self, smooth=1):
+      super(DiceLoss, self).__init__()
+      self.smooth = smooth # adding small numer to avoid division by zero
+
+  def forward(self, prediction, target):
+      intersection = (prediction * target).sum()
+      union = prediction.sum() + target.sum() + 1
+      dice = (2 * intersection + 1) / union
+      return 1 - dice
+
+class FocalLoss(nn.Module):
+  """Computes the focal loss between input and target
+  as described here https://arxiv.org/abs/1708.02002v2
+
+  Args:
+      gamma (float):  The focal loss focusing parameter.
+      weights (Union[None, Tensor]): Rescaling weight given to each class.
+      If given, has to be a Tensor of size C. optional.
+      reduction (str): Specifies the reduction to apply to the output.
+      it should be one of the following 'none', 'mean', or 'sum'.
+      default 'mean'.
+      ignore_index (int): Specifies a target value that is ignored and
+      does not contribute to the input gradient. optional.
+      eps (float): smoothing to prevent log from returning inf.
+  """
+  def __init__(
+          self,
+          gamma=2,
+          weights: Union[None, Tensor] = None,
+          reduction: str = 'mean',
+          ignore_index=-100,
+          eps=1e-16
+          ) -> None:
+      super().__init__()
+      if reduction not in ['mean', 'none', 'sum']:
+          raise NotImplementedError(
+              'Reduction {} not implemented.'.format(reduction)
+              )
+      assert weights is None or isinstance(weights, Tensor), \
+          'weights should be of type Tensor or None, but {} given'.format(
+              type(weights))
+      self.reduction = reduction
+      self.gamma = gamma
+      self.ignore_index = ignore_index
+      self.eps = eps
+      self.weights = weights
+
+  def _get_weights(self, target: Tensor) -> Tensor:
+      if self.weights is None:
+          return torch.ones(target.shape[0])
+      weights = target * self.weights
+      return weights.sum(dim=-1)
+
+  def _process_target(
+          self, target: Tensor, num_classes: int, mask: Tensor
+          ) -> Tensor:
+      
+      #convert all ignore_index elements to zero to avoid error in one_hot
+      #note - the choice of value 0 is arbitrary, but it should not matter as these elements will be ignored in the loss calculation
+      target = target * (target!=self.ignore_index) 
+      target = target.reshape(-1)
+      return one_hot(target, num_classes=num_classes)
+
+  def _process_preds(self, x: Tensor) -> Tensor:
+      if x.dim() == 1:
+          x = torch.vstack([1 - x, x])
+          x = x.permute(1, 0)
+          return x
+      return x.view(-1, x.shape[-1])
+
+  def _calc_pt(
+          self, target: Tensor, x: Tensor, mask: Tensor
+          ) -> Tensor:
+      p = target * x
+      p = p.sum(dim=-1)
+      p = p * ~mask
+      return p
+
+  def forward(self, x: Tensor, target: Tensor) -> Tensor:
+      assert torch.all((x >= 0.0) & (x <= 1.0)), ValueError(
+          'The predictions values should be between 0 and 1, \
+              make sure to pass the values to sigmoid for binary \
+              classification or softmax for multi-class classification'
+      )
+      mask = target == self.ignore_index
+      mask = mask.reshape(-1)
+      x = self._process_preds(x)
+      num_classes = x.shape[-1]
+      target = self._process_target(target, num_classes, mask)
+      weights = self._get_weights(target).to(x.device)
+      pt = self._calc_pt(target, x, mask)
+      focal = 1 - pt
+      nll = -torch.log(self.eps + pt)
+      nll = nll.masked_fill(mask, 0)
+      loss = weights * (focal ** self.gamma) * nll
+      return self._reduce(loss, mask, weights)
+
+  def _reduce(self, x: Tensor, mask: Tensor, weights: Tensor) -> Tensor:
+      if self.reduction == 'mean':
+          return x.sum() / (~mask * weights).sum()
+      elif self.reduction == 'sum':
+          return x.sum()
+      else:
+          return x
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+class BinaryFocalLoss(nn.Module):
+    def __init__(self, alpha=0.25, gamma=2.0, reduction='mean'):
+        super().__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.reduction = reduction
+
+    def forward(self, inputs, targets):
+        # Ensure the inputs are squeezed to remove the channel dimension if it's 1
+        inputs = inputs.squeeze(1)
+        targets = targets.squeeze(1)
+
+        # Calculate the binary cross entropy loss
+        BCE_loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction='none')
+
+        # Calculate the focal loss components
+        targets = targets.type(inputs.type())  # Ensure same type
+        pt = torch.exp(-BCE_loss)
+        F_loss = self.alpha * (1 - pt) ** self.gamma * BCE_loss
+
+        # Apply reduction
+        if self.reduction == 'mean':
+            return torch.mean(F_loss)
+        elif self.reduction == 'sum':
+            return torch.sum(F_loss)
+        else:
+            return F_loss
+
+class FraudLoss(nn.Module):
+    def __init__(self):
+      super(FraudLoss, self).__init__()
+      self.binaryCE = nn.BCELoss()
+      self.dice = DiceLoss()
+
+    def forward(self, prediction, target):
+      return self.binaryCE(prediction, target) + self.dice(prediction, target)
+
+# Example usage
+# pred = torch.randn(4, 1, 256, 256)  # Example prediction tensor
+# target = torch.randint(0, 2, (4, 1, 256, 256))  # Example target tensor
+# criterion = BinaryFocalLoss()
+# loss = criterion(pred, target)
+

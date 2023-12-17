@@ -95,6 +95,9 @@ def predicted_patch_labels_to_mask(labels, output_shape): #array 1d, tuple (2)
 
     return mask
 
+def numpy_and_binarize(x):
+    return np.where(x.detach().cpu().numpy() > 0.5, 1, 0)
+
 def img_to_patches_fixed(img, patch_size, print_=False):
     """
     Function that takes full size image and outputs a list of the image's patches
@@ -116,6 +119,9 @@ def img_to_patches_fixed(img, patch_size, print_=False):
 
 def PatchPred(prediction):
     return np.array(torch.argmax(prediction, dim = 1).detach().cpu().numpy())
+
+def binarize(prediction):
+  return torch.where(prediction > .5, 1, 0)
 
 class identity:
     def __init__(self) -> None:
