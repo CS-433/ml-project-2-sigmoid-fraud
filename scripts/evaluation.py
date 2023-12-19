@@ -394,3 +394,41 @@ class FraudLoss(nn.Module):
 # criterion = BinaryFocalLoss()
 # loss = criterion(pred, target)
 
+def test_masks(test_directory, model, visualize_number=6, deep=False):
+
+  test_filepaths = []
+  for root, dirs, files in sorted(os.walk(test_directory))[1:]: test_filepaths.append(root+'/'+files[0])
+
+  model.eval()
+
+  output_masks = [] #Here we go baby
+  output_masks_filenames = []
+  for fdx, file in enumerate(sorted(test_filepaths)):
+
+    test_img = cv.imread(file)
+    test_img = torch.tensor(test_img[:,:,:,None].T, dtype=torch.float32).to(device=DEVICE)
+
+    if (not deep):
+      mask = np.where(identity_detach(model(test_img)) > 0.5, 1, 0)[0][0]
+    else:
+      print(test_img.shape)
+      mask = np.where(identity_detach(model(test_img)['out'])>0.5, 1, 0)[0][0]
+
+    if (fdx%5 == 0): print(f"data/test_masks/{file.split('/')[-1]}")
+    output_filename = f"data/test_masks/{file.split('/')[-1]}"
+    output_masks_filenames.append(output_filename)
+    cv.imwrite(output_filename, 255*mask.T)
+
+    output_masks.append(mask.T)
+
+  test_ids =  np.random.choice(len(output_masks), size = visualize_number)
+
+  for i in range(visualize_number):
+    plt.figure(figsize = (3, 3))
+    test_img = cv.imread(test_filepaths[test_ids[i]])
+    out_img = color.gray2rgb(255*output_masks[test_ids[i]])
+    #print(test_img, out_img)
+    cat_img = np.concatenate([test_img, out_img], axis=1)
+    plt.imshow(cat_img)
+    plt.show()
+  return output_masks, output_masks_filenames
