@@ -393,6 +393,7 @@ class FraudLoss(nn.Module):
 # target = torch.randint(0, 2, (4, 1, 256, 256))  # Example target tensor
 # criterion = BinaryFocalLoss()
 # loss = criterion(pred, target)
+DEVICE = "mps" if getattr(torch, "has_mps", False) else "cuda" if torch.cuda.is_available() else "cpu"
 
 def test_masks(test_directory, model, visualize_number=6, deep=False):
 
