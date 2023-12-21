@@ -25,3 +25,30 @@ Our best model was proven to be dine utuning a pre trained DeepLab model with AI
 
 ## REPORT
 A 4 page scientific report describes the most relevant feature engineering techniques and implementations that we worked on, explains how and why these techniques improved our predictions and includes an ethical consideration associated to this machine learining problem. 
+
+## RUN.PY
+To run the run.py and obtain our best prediction the user would need to have the following necessary libraries, as our model is too heavy to upload to github so we made an accessible link through google drive and necessitates this library and 160MB to store the model:
+import gdown 
+
+import torch
+import torchvision
+from torchvision import models
+from torch import nn
+import torch.optim as optim
+from torch.utils.data import DataLoader, Dataset
+import os
+from PIL import Image
+
+from data import mask_to_submission
+import cv2 as cv
+import matplotlib.pyplot as plt
+import numpy as np
+from skimage import color
+import os
+import seaborn as sns
+import pandas as pd
+
+import os
+import numpy as np
+import matplotlib.image as mpimg
+import re
