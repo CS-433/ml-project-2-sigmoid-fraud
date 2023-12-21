@@ -23,9 +23,5 @@ The scripts file is composed of python files defining our models, training metho
 
 Our best model was proven to be dine utuning a pre trained DeepLab model with AI crowd submission of 0.907. It is located in the notebook experiments_deeplab.ipynb. 
 
-## OTHER MODEL PREDICTION 
-
-We would've liked to continue and explore more avenues with logsitic regression such as oversampling and more training of these models as well as explore other models such as multi layer perceptrons for which we briefly developped some results.
-
 ## REPORT
-A 4 page scientific report describes the most relevant feature engineering techniques and implementations that we worked on, and explains how and why these techniques improved our predictions. In addition it describes an ethical risL affiliated with this problematic
+A 4 page scientific report describes the most relevant feature engineering techniques and implementations that we worked on, explains how and why these techniques improved our predictions and includes an ethical consideration associated to this machine learining problem. 
