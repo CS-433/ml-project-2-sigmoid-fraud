@@ -8,24 +8,21 @@ This project was conducted by :
 - Daphné de Quatrebarbes
 
 ## INTRO
-This project aims to predict coronary heart disease risk using clinical and lifestyle profiles. We use data from the Behavioral Risk Factor Surveillance System to analyze health-related behaviors, conditions, and preventive services related to heart disease. Our report outlines model optimization efforts involving data cleaning and implementation of learning algorithms. After comparing method scores, we select the most suitable machine learning approach for accurate predictions.
+This project focuses on segmenting roads from aerial images using various algorithms and optimization techniques. This README provides essential information on file organization and usage to ensure a smooth experience.
 
 # PROJECT STRUCTURE 
 
 ## DATA 
 The data sets required to train and test the prediction models we have implemented can be found on [AIcrowd][(https://www.aicrowd.com/challenges/epfl-machine-learning-project-1](https://www.aicrowd.com/challenges/epfl-ml-road-segmentation))
+Functions for submission are provided and located in the file import.
 Note To run our code, please download these files and put them in the same folder as our code files.
 
-## HELPERS FILE 
-The helpers.py contains all the functions used in our run.py in order to use the implemented algorithms.
-
-## HYPERPARAMETER OPTIMIZATION 
-
-We ran multiple hyper parameter optimization processes with our lambdas and feature expansion degrees.
+## SCRIPTS FILE 
+The scripts file is composed of python files defining our models, training methods, preprocessing, evaluation metrics and methods, data augmentation and imports. 
 
 ## BEST MODEL PREDICTION 
 
-Our best model was proven to be Ridge Regression with a degree = 5 and large lambda of 1e-1. 
+Our best model was proven to be dine utuning a pre trained DeepLab model with AI crowd submission of 0.907. It is located in the notebook experiments_deeplab.ipynb. 
 
 ## OTHER MODEL PREDICTION 
 
